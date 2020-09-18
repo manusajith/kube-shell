@@ -1,10 +1,9 @@
 from __future__ import print_function, absolute_import, unicode_literals
 
-from prompt_toolkit import prompt
+from prompt_toolkit import PromptSession
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
-from prompt_toolkit.key_binding.defaults import load_key_bindings_for_prompt
-from prompt_toolkit.keys import Keys
+from prompt_toolkit.lexers import PygmentsLexer
 
 from kubeshell.style import StyleFactory
 from kubeshell.completer import KubectlCompleter
@@ -21,7 +20,6 @@ import logging
 logger = logging.getLogger(__name__)
 
 inline_help = True
-registry = load_key_bindings_for_prompt()
 completer = KubectlCompleter()
 client = KubernetesClient()
 
@@ -98,7 +96,6 @@ class Kubeshell(object):
             os.makedirs(shell_dir)
         self.toolbar = Toolbar(self.get_cluster_name, self.get_namespace, self.get_user, self.get_inline_help)
 
-    @registry.add_binding(Keys.F4)
     def _(event):
         try:
             KubeConfig.switch_to_next_cluster()
@@ -106,7 +103,6 @@ class Kubeshell(object):
         except Exception as e:
             logger.warning("failed switching clusters", exc_info=1)
 
-    @registry.add_binding(Keys.F5)
     def _(event):
         try:
             KubeConfig.switch_to_next_namespace(Kubeshell.namespace)
@@ -114,13 +110,11 @@ class Kubeshell(object):
         except Exception as e:
             logger.warning("failed namespace switching", exc_info=1)
 
-    @registry.add_binding(Keys.F9)
     def _(event):
         global inline_help
         inline_help = not inline_help
         completer.set_inline_help(inline_help)
 
-    @registry.add_binding(Keys.F10)
     def _(event):
         sys.exit()
 
@@ -146,6 +140,7 @@ class Kubeshell(object):
             click.secho('Kube-shell uses {0} for server side completion. Could not find {0}. '
                     'Server side completion functionality may not work.'.format(kubeconfig_filepath),
                         fg='red', blink=True, bold=True)
+        session = PromptSession(history=self.history)
         while True:
             global inline_help
             try:
@@ -155,16 +150,14 @@ class Kubeshell(object):
             completer.set_namespace(self.namespace)
 
             try:
-                user_input = prompt('kube-shell> ',
-                            history=self.history,
+                user_input = session.prompt(
+                            [('class:prompt', 'k8s:('), ('class:state',  Kubeshell.clustername), ('class:prompt', ')* ')],
                             auto_suggest=AutoSuggestFromHistory(),
                             style=StyleFactory("vim").style,
-                            lexer=KubectlLexer,
-                            get_title=get_title,
+                            lexer=PygmentsLexer(KubectlLexer),
                             enable_history_search=False,
-                            get_bottom_toolbar_tokens=self.toolbar.handler,
+                            bottom_toolbar=self.toolbar.handler,
                             vi_mode=True,
-                            key_bindings_registry=registry,
                             completer=completer)
             except (EOFError, KeyboardInterrupt):
                 sys.exit()
